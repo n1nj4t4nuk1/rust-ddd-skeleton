@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "apps/config_api",
+    "libs/config",
+    "libs/shared/cqrs",
+    "libs/shared/domain-events",
+    "libs/shared/valueobject",
+]
