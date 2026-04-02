@@ -1,4 +1,4 @@
-<h1 align="center">🦀 Rust DDD skeleton</h1>
+# Rust DDD Template
 
 A production-ready Rust workspace template for building microservices following Domain-Driven Design (DDD), CQRS, and Domain Events patterns.
 
