@@ -14,13 +14,16 @@ fn make_finder(repo: Arc<ConfigEntryRepositoryMock>) -> ConfigEntryFinder {
 }
 
 #[tokio::test]
-async fn it_returns_none_when_entry_does_not_exist() {
+async fn it_returns_not_found_when_entry_does_not_exist() {
     let repo = Arc::new(ConfigEntryRepositoryMock::that_finds_nothing());
     let finder = make_finder(repo);
 
-    let result = finder.execute(ConfigKeyMother::random()).await.unwrap();
+    let result = finder.execute(ConfigKeyMother::random()).await;
 
-    assert!(result.is_none());
+    assert!(matches!(
+        result,
+        Err(ConfigEntryRepositoryError::NotFound)
+    ));
 }
 
 #[tokio::test]
@@ -34,10 +37,8 @@ async fn it_returns_entry_when_it_exists() {
         .await
         .unwrap();
 
-    assert!(result.is_some());
-    let response = result.unwrap();
-    assert_eq!(response.key, "my-key");
-    assert_eq!(response.value, "my-value");
+    assert_eq!(result.key().value(), "my-key");
+    assert_eq!(result.value().value(), "my-value");
 }
 
 #[tokio::test]

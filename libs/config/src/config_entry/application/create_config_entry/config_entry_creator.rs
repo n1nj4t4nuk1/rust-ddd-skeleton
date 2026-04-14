@@ -12,8 +12,6 @@ use crate::config_entry::domain::repositories::config_entry_repository::ConfigEn
 use crate::config_entry::domain::value_objects::config_key::ConfigKey;
 use crate::config_entry::domain::value_objects::config_value::ConfigValue;
 
-use super::create_config_entry_response::CreateConfigEntryResponse;
-
 /// Domain service that persists a new [`ConfigEntry`] and publishes
 /// a [`ConfigEntryCreatedEvent`] via the event bus.
 ///
@@ -32,7 +30,7 @@ impl ConfigEntryCreator {
         &self,
         key: ConfigKey,
         value: ConfigValue,
-    ) -> Result<CreateConfigEntryResponse, ConfigEntryRepositoryError> {
+    ) -> Result<(), ConfigEntryRepositoryError> {
         let entry = ConfigEntry::new(key, value);
         debug!(key = %entry.key(), "Creating config entry");
 
@@ -44,6 +42,6 @@ impl ConfigEntryCreator {
             .map_err(|e| ConfigEntryRepositoryError::Unexpected(e.to_string()))?;
 
         info!(key = %entry.key(), "Config entry created");
-        Ok(CreateConfigEntryResponse)
+        Ok(())
     }
 }

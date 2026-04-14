@@ -17,10 +17,12 @@
 //! # use async_trait::async_trait;
 //! # struct MyCommand;
 //! # impl Command for MyCommand {}
+//! # struct MyResponse;
 //! # struct MyHandler;
 //! # #[async_trait]
 //! # impl CommandHandler<MyCommand> for MyHandler {
-//! #     async fn handle(&self, _: MyCommand) -> Result<(), CommandBusError> { Ok(()) }
+//! #     type Response = MyResponse;
+//! #     async fn handle(&self, _: MyCommand) -> Result<MyResponse, CommandBusError> { Ok(MyResponse) }
 //! # }
 //! use shared_cqrs::command::infrastructure::in_memory::in_memory_command_bus::InMemoryCommandBus;
 //! use shared_cqrs::command::domain::command_bus::CommandBus;
@@ -29,7 +31,8 @@
 //! # async fn main() {
 //! let mut bus = InMemoryCommandBus::new();
 //! bus.register(MyHandler).unwrap();
-//! bus.dispatch(Box::new(MyCommand)).await.unwrap();
+//! let raw = bus.dispatch(Box::new(MyCommand)).await.unwrap();
+//! let response = raw.downcast::<MyResponse>().unwrap();
 //! # }
 //! ```
 

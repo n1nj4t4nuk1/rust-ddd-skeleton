@@ -4,6 +4,7 @@ use actix_web::{put, web, HttpResponse, Responder};
 use tracing::{debug, info, warn};
 
 use config::config_entry::application::update_config_entry::update_config_entry_command::UpdateConfigEntryCommand;
+use config::config_entry::application::update_config_entry::update_config_entry_response::UpdateConfigEntryResponse;
 use config::config_entry::domain::value_objects::config_key::ConfigKey;
 use config::config_entry::domain::value_objects::config_value::ConfigValue;
 
@@ -33,19 +34,28 @@ pub async fn handler(
     };
 
     match state.command_bus.dispatch(Box::new(command)).await {
-        Ok(_) => {
-            info!(key = %key_str, "Config entry updated");
-            HttpResponse::Ok().finish()
-        }
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("not found") || msg.contains("NotFound") {
-                warn!(key = %key_str, "Config entry not found for update");
-                HttpResponse::NotFound().finish()
+        Ok(boxed) => {
+            let response = boxed
+                .downcast::<UpdateConfigEntryResponse>()
+                .expect("Unexpected response type from UpdateConfigEntryCommandHandler");
+
+            if let Some(ref error) = response.error {
+                match error.concept.as_str() {
+                    "NotFound" => {
+                        warn!(key = %key_str, "Config entry not found for update");
+                        HttpResponse::NotFound().body(error.message.clone())
+                    }
+                    "AlreadyExists" => HttpResponse::Conflict().body(error.message.clone()),
+                    _ => {
+                        warn!(key = %key_str, error = %error.message, "Failed to update config entry");
+                        HttpResponse::InternalServerError().body(error.message.clone())
+                    }
+                }
             } else {
-                warn!(key = %key_str, error = %msg, "Failed to update config entry");
-                HttpResponse::InternalServerError().body(msg)
+                info!(key = %key_str, "Config entry updated");
+                HttpResponse::Ok().finish()
             }
         }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }

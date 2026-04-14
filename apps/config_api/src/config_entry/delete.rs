@@ -4,6 +4,7 @@ use actix_web::{delete, web, HttpResponse, Responder};
 use tracing::{debug, info, warn};
 
 use config::config_entry::application::delete_config_entry::delete_config_entry_command::DeleteConfigEntryCommand;
+use config::config_entry::application::delete_config_entry::delete_config_entry_response::DeleteConfigEntryResponse;
 use config::config_entry::domain::value_objects::config_key::ConfigKey;
 
 use crate::AppState;
@@ -26,19 +27,27 @@ pub async fn handler(
     let command = DeleteConfigEntryCommand { key: ConfigKey::new(key_str.clone()) };
 
     match state.command_bus.dispatch(Box::new(command)).await {
-        Ok(_) => {
-            info!(key = %key_str, "Config entry deleted");
-            HttpResponse::NoContent().finish()
-        }
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("not found") || msg.contains("NotFound") {
-                warn!(key = %key_str, "Config entry not found for deletion");
-                HttpResponse::NotFound().finish()
+        Ok(boxed) => {
+            let response = boxed
+                .downcast::<DeleteConfigEntryResponse>()
+                .expect("Unexpected response type from DeleteConfigEntryCommandHandler");
+
+            if let Some(ref error) = response.error {
+                match error.concept.as_str() {
+                    "NotFound" => {
+                        warn!(key = %key_str, "Config entry not found for deletion");
+                        HttpResponse::NotFound().body(error.message.clone())
+                    }
+                    _ => {
+                        warn!(key = %key_str, error = %error.message, "Failed to delete config entry");
+                        HttpResponse::InternalServerError().body(error.message.clone())
+                    }
+                }
             } else {
-                warn!(key = %key_str, error = %msg, "Failed to delete config entry");
-                HttpResponse::InternalServerError().body(msg)
+                info!(key = %key_str, "Config entry deleted");
+                HttpResponse::NoContent().finish()
             }
         }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }

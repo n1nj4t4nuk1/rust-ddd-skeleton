@@ -13,11 +13,12 @@ use crate::command::domain::command_bus::CommandBus;
 use crate::command::domain::command_bus_error::CommandBusError;
 use crate::command::domain::command_handler::CommandHandler;
 
-/// Type alias for a type-erased, heap-allocated async handler function.
+/// Type alias for a type-erased, heap-allocated async handler function
+/// that returns a boxed response.
 type HandlerFn = Box<
     dyn Fn(
             Box<dyn Any + Send + Sync>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), CommandBusError>> + Send>>
+        ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Any + Send + Sync>, CommandBusError>> + Send>>
         + Send
         + Sync,
 >;
@@ -26,6 +27,9 @@ type HandlerFn = Box<
 ///
 /// Handlers are registered at startup and looked up at dispatch time using
 /// Rust's type system. Each command type may have at most one handler.
+///
+/// The response is returned as `Box<dyn Any + Send + Sync>` and must be
+/// downcast by the caller to the expected concrete type.
 ///
 /// # Example
 ///
@@ -37,10 +41,12 @@ type HandlerFn = Box<
 /// # use async_trait::async_trait;
 /// # struct CreateUserCommand { username: String }
 /// # impl Command for CreateUserCommand {}
+/// # struct CreateUserResponse;
 /// # struct CreateUserHandler;
 /// # #[async_trait]
 /// # impl CommandHandler<CreateUserCommand> for CreateUserHandler {
-/// #     async fn handle(&self, _: CreateUserCommand) -> Result<(), CommandBusError> { Ok(()) }
+/// #     type Response = CreateUserResponse;
+/// #     async fn handle(&self, _: CreateUserCommand) -> Result<CreateUserResponse, CommandBusError> { Ok(CreateUserResponse) }
 /// # }
 /// use shared_cqrs::command::infrastructure::in_memory::in_memory_command_bus::InMemoryCommandBus;
 ///
@@ -49,9 +55,10 @@ type HandlerFn = Box<
 /// let mut bus = InMemoryCommandBus::new();
 /// bus.register(CreateUserHandler).unwrap();
 ///
-/// bus.dispatch(Box::new(CreateUserCommand { username: "alice".into() }))
+/// let raw = bus.dispatch(Box::new(CreateUserCommand { username: "alice".into() }))
 ///     .await
 ///     .unwrap();
+/// let response = raw.downcast::<CreateUserResponse>().unwrap();
 /// # }
 /// ```
 pub struct InMemoryCommandBus {
@@ -99,10 +106,22 @@ impl InMemoryCommandBus {
                         return Box::pin(async move {
                             Err(CommandBusError::HandlerNotFound(TypeId::of::<C>()))
                         })
-                            as Pin<Box<dyn Future<Output = Result<(), CommandBusError>> + Send>>;
+                            as Pin<
+                                Box<
+                                    dyn Future<
+                                            Output = Result<
+                                                Box<dyn Any + Send + Sync>,
+                                                CommandBusError,
+                                            >,
+                                        > + Send,
+                                >,
+                            >;
                     }
                 };
-                Box::pin(async move { handler.handle(cmd).await })
+                Box::pin(async move {
+                    let response = handler.handle(cmd).await?;
+                    Ok(Box::new(response) as Box<dyn Any + Send + Sync>)
+                })
             }),
         );
 
@@ -118,13 +137,16 @@ impl Default for InMemoryCommandBus {
 
 #[async_trait]
 impl CommandBus for InMemoryCommandBus {
-    /// Dispatches the command to its registered handler.
+    /// Dispatches the command to its registered handler and returns the response.
     ///
     /// # Errors
     ///
     /// Returns [`CommandBusError::HandlerNotFound`] if no handler is registered
     /// for the command's type.
-    async fn dispatch(&self, command: Box<dyn Command>) -> Result<(), CommandBusError> {
+    async fn dispatch(
+        &self,
+        command: Box<dyn Command>,
+    ) -> Result<Box<dyn Any + Send + Sync>, CommandBusError> {
         let type_id = command.command_type_id();
 
         match self.handlers.get(&type_id) {

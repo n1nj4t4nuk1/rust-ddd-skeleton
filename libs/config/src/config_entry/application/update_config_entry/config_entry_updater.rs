@@ -12,8 +12,6 @@ use crate::config_entry::domain::repositories::config_entry_repository::ConfigEn
 use crate::config_entry::domain::value_objects::config_key::ConfigKey;
 use crate::config_entry::domain::value_objects::config_value::ConfigValue;
 
-use super::update_config_entry_response::UpdateConfigEntryResponse;
-
 /// Domain service that updates an existing [`ConfigEntry`] and publishes
 /// a [`ConfigEntryUpdatedEvent`] via the event bus.
 ///
@@ -32,7 +30,7 @@ impl ConfigEntryUpdater {
         &self,
         key: ConfigKey,
         value: ConfigValue,
-    ) -> Result<UpdateConfigEntryResponse, ConfigEntryRepositoryError> {
+    ) -> Result<(), ConfigEntryRepositoryError> {
         debug!(key = %key, "Updating config entry");
 
         let previous = self
@@ -53,6 +51,6 @@ impl ConfigEntryUpdater {
             .map_err(|e| ConfigEntryRepositoryError::Unexpected(e.to_string()))?;
 
         info!(key = %updated.key(), "Config entry updated");
-        Ok(UpdateConfigEntryResponse)
+        Ok(())
     }
 }

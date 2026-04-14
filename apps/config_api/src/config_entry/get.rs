@@ -17,12 +17,6 @@ pub struct GetConfigEntryResponse {
     pub value: String,
 }
 
-impl From<FindConfigEntryResponse> for GetConfigEntryResponse {
-    fn from(r: FindConfigEntryResponse) -> Self {
-        Self { key: r.key, value: r.value }
-    }
-}
-
 /// Handles `GET /config/{key}`.
 ///
 /// # Responses
@@ -43,17 +37,28 @@ pub async fn handler(
     match state.query_bus.ask(Box::new(query)).await {
         Ok(boxed) => {
             let response = boxed
-                .downcast::<Option<FindConfigEntryResponse>>()
-                .expect("Unexpected response type from query handler");
-            match *response {
-                Some(r) => {
-                    info!(key = %key_str, "Config entry found");
-                    HttpResponse::Ok().json(GetConfigEntryResponse::from(r))
+                .downcast::<FindConfigEntryResponse>()
+                .expect("Unexpected response type from FindConfigEntryQueryHandler");
+
+            if let Some(ref error) = response.error {
+                match error.concept.as_str() {
+                    "NotFound" => {
+                        info!(key = %key_str, "Config entry not found");
+                        HttpResponse::NotFound().body(error.message.clone())
+                    }
+                    _ => {
+                        warn!(key = %key_str, error = %error.message, "Failed to find config entry");
+                        HttpResponse::InternalServerError().body(error.message.clone())
+                    }
                 }
-                None => {
-                    info!(key = %key_str, "Config entry not found");
-                    HttpResponse::NotFound().finish()
-                }
+            } else if let Some(ref entry) = response.config_entry {
+                info!(key = %key_str, "Config entry found");
+                HttpResponse::Ok().json(GetConfigEntryResponse {
+                    key: entry.key.clone(),
+                    value: entry.value.clone(),
+                })
+            } else {
+                HttpResponse::NotFound().finish()
             }
         }
         Err(e) => {

@@ -4,6 +4,7 @@ use actix_web::{post, web, HttpResponse, Responder};
 use tracing::{debug, info, warn};
 
 use config::config_entry::application::create_config_entry::create_config_entry_command::CreateConfigEntryCommand;
+use config::config_entry::application::create_config_entry::create_config_entry_response::CreateConfigEntryResponse;
 use config::config_entry::domain::value_objects::config_key::ConfigKey;
 use config::config_entry::domain::value_objects::config_value::ConfigValue;
 
@@ -31,19 +32,28 @@ pub async fn handler(
     };
 
     match state.command_bus.dispatch(Box::new(command)).await {
-        Ok(_) => {
-            info!(key = %body.key, "Config entry created");
-            HttpResponse::Created().finish()
-        }
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("already exists") || msg.contains("AlreadyExists") {
-                warn!(key = %body.key, "Config entry already exists");
-                HttpResponse::Conflict().body(msg)
+        Ok(boxed) => {
+            let response = boxed
+                .downcast::<CreateConfigEntryResponse>()
+                .expect("Unexpected response type from CreateConfigEntryCommandHandler");
+
+            if let Some(ref error) = response.error {
+                match error.concept.as_str() {
+                    "AlreadyExists" => {
+                        warn!(key = %body.key, "Config entry already exists");
+                        HttpResponse::Conflict().body(error.message.clone())
+                    }
+                    "NotFound" => HttpResponse::NotFound().body(error.message.clone()),
+                    _ => {
+                        warn!(key = %body.key, error = %error.message, "Failed to create config entry");
+                        HttpResponse::InternalServerError().body(error.message.clone())
+                    }
+                }
             } else {
-                warn!(key = %body.key, error = %msg, "Failed to create config entry");
-                HttpResponse::InternalServerError().body(msg)
+                info!(key = %body.key, "Config entry created");
+                HttpResponse::Created().finish()
             }
         }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
